@@ -17,7 +17,14 @@ if %errorlevel% neq 0 (
 )
 
 echo Creating build directory...
-mkdir build 2> nul
+if not exist build mkdir build
+if %errorlevel% neq 0 (
+    echo Error: Failed to create build directory.
+    goto error
+)
+
+rem Ensure build directory has proper permissions
+icacls build /grant Everyone:(OI)(CI)F /T > nul 2>&1
 
 echo Compiling all source files...
 %COMPILER% %CFLAGS% -c authentication.cpp -I"%OPENSSL_INCLUDE%" -o build/authentication.o

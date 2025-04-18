@@ -1,4 +1,6 @@
 #include "authentication.h"
+#include <direct.h>  
+#include <errno.h>   
 #include <mutex>
 #include <iostream>
 #include <string>
@@ -31,8 +33,32 @@ void AuthUser::setLoginStatus(bool status) { isLoggedIn = status; }
 
 // AuthenticationManager definitions
 AuthenticationManager::AuthenticationManager(const std::string& dbFile) : dbFilePath(dbFile) {
-    OpenSSL_add_all_algorithms();
-    loadUsers();
+    // Create the build directory if it doesn't exist
+    std::string buildDir = "build";
+    std::cout << "Creating directory: " << buildDir << std::endl;
+    
+    // Create directory with full permissions
+    if (_mkdir(buildDir.c_str()) == 0 || errno == EEXIST) {
+        std::cout << "Directory created or already exists" << std::endl;
+        OpenSSL_add_all_algorithms();
+        
+        // Only create the DB file if it does not exist
+        {
+            std::ifstream fileCheck(dbFilePath);
+            if (!fileCheck.good()) {
+                std::ofstream test(dbFilePath);
+                if (!test.is_open()) {
+                    std::cerr << "Failed to create/open database file: " << strerror(errno) << std::endl;
+                    throw std::runtime_error("Failed to create/open database file");
+                }
+                test.close();
+            }
+        }
+        loadUsers();
+    } else {
+        std::cerr << "Failed to create directory: " << strerror(errno) << std::endl;
+        throw std::runtime_error("Failed to create build directory");
+    }
 }
 
 AuthenticationManager::~AuthenticationManager() {
@@ -88,29 +114,79 @@ void AuthenticationManager::loadUsers() {
     file.close();
 }
 
-void AuthenticationManager::saveUsers() {
-    std::lock_guard<std::mutex> lock(userMutex);
-    std::ofstream file(dbFilePath);
+#include <direct.h> // For _getcwd on Windows
+
+bool AuthenticationManager::saveUsers() {
+    std::cout << "Saving users to: " << dbFilePath << std::endl;
+    
+    std::ofstream file(dbFilePath, std::ios::out | std::ios::trunc);
     if (!file.is_open()) {
-        std::cerr << "Error: Could not open user database file for writing" << std::endl;
-        return;
+        std::cerr << "Failed to open file for writing: " << strerror(errno) << std::endl;
+        return false;
     }
+
+    bool success = true;
     for (const auto& pair : users) {
         const AuthUser& user = pair.second;
-        file << user.getUsername() << ":" << user.getPasswordHash() << ":" << user.getSalt() << std::endl;
+        file << user.getUsername() << ":" 
+             << user.getPasswordHash() << ":" 
+             << user.getSalt() << "\n";
+             
+        if (file.fail()) {
+            std::cerr << "Error writing to file" << std::endl;
+            success = false;
+            break;
+        }
     }
+
     file.close();
+    if (file.fail() || !success) {
+        std::cerr << "Error during file operations" << std::endl;
+        return false;
+    }
+
+    std::cout << "Successfully saved users database" << std::endl;
+    return true;
 }
 
 bool AuthenticationManager::registerUser(const std::string& username, const std::string& password) {
-    if (username.empty() || password.empty()) return false;
-    std::lock_guard<std::mutex> lock(userMutex);
-    if (users.find(username) != users.end()) return false;
-    std::string salt = generateSalt();
-    std::string hashedPassword = hashPassword(password, salt);
-    users[username] = AuthUser(username, hashedPassword, salt);
-    saveUsers();
-    return true;
+    std::cout << "Starting registration for user: " << username << std::endl;
+    
+    if (username.empty() || password.empty()) {
+        std::cerr << "Registration failed: Empty username or password" << std::endl;
+        return false;
+    }
+
+    // Use RAII for both locks to prevent deadlocks
+    std::lock_guard<std::mutex> userLock(userMutex);
+    std::lock_guard<std::mutex> fileLock(dbMutex);  // Use std::lock_guard instead of FileLock
+
+    try {
+        if (users.find(username) != users.end()) {
+            std::cerr << "Registration failed: Username " << username << " already exists" << std::endl;
+            return false;
+        }
+
+        std::cout << "Generating salt for user: " << username << std::endl;
+        std::string salt = generateSalt(16);
+        
+        std::cout << "Hashing password for user: " << username << std::endl;
+        std::string hashedPassword = hashPassword(password, salt);
+        
+        std::cout << "Creating user: " << username << std::endl;
+        users[username] = AuthUser(username, hashedPassword, salt);
+        
+        std::cout << "Saving users to database" << std::endl;
+        if (!saveUsers()) {
+            std::cerr << "Failed to save users to database" << std::endl;
+            users.erase(username);
+            return false;
+        }
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Registration failed with exception: " << e.what() << std::endl;
+        return false;
+    }
 }
 
 bool AuthenticationManager::authenticateUser(const std::string& username, const std::string& password) {

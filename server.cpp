@@ -9,8 +9,9 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 
-// Link with Winsock library
+#ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
+#endif
 
 #include "authentication.h" // Include your authentication header
 #include "group_handler.h"  // Include your group handler header
@@ -23,7 +24,9 @@ const int BUFFER_SIZE = 4096;
 // Global variables
 std::atomic<bool> serverRunning(true);
 SynchronizedGroupManager groupManager;
-AuthenticationManager authManager;
+// Update the DB_PATH constant
+const std::string DB_PATH = "C:\\Users\\123ka\\OneDrive\\Desktop\\OS_mini_project\\build\\users.db";
+AuthenticationManager authManager(DB_PATH);
 
 // Function prototypes
 void handleClient(SOCKET clientSocket);
@@ -166,53 +169,73 @@ void handleClient(SOCKET clientSocket) {
 }
 
 void processCommand(SOCKET clientSocket, const std::string& command) {
+    // Trim any newlines or carriage returns
+    std::string trimmedCommand = command;
+    size_t end = trimmedCommand.find_last_not_of("\r\n");
+    if (end != std::string::npos)
+        trimmedCommand = trimmedCommand.substr(0, end + 1);
+
+    // Log received command
+    std::cout << "Received command: '" << trimmedCommand << "'" << std::endl;
+
+    // Split command and args
     std::string cmd;
     std::string args;
-    
-    // Split command and arguments
-    size_t spacePos = command.find(' ');
+    size_t spacePos = trimmedCommand.find(' ');
     if (spacePos != std::string::npos) {
-        cmd = command.substr(0, spacePos);
-        args = command.substr(spacePos + 1);
+        cmd = trimmedCommand.substr(0, spacePos);
+        args = trimmedCommand.substr(spacePos + 1);
     } else {
-        cmd = command;
+        cmd = trimmedCommand;
+        args = "";
     }
-    
-    // Process different commands
+
     if (cmd == "/register") {
-        // Register a new user
         size_t colonPos = args.find(':');
         if (colonPos != std::string::npos) {
             std::string username = args.substr(0, colonPos);
             std::string password = args.substr(colonPos + 1);
+
+            // Trim whitespace from username and password
+            auto ltrim = [](std::string& s) { s.erase(0, s.find_first_not_of(" \t\r\n")); };
+            auto rtrim = [](std::string& s) { s.erase(s.find_last_not_of(" \t\r\n") + 1); };
+            ltrim(username); rtrim(username);
+            ltrim(password); rtrim(password);
+
+            std::string ack = "Processing registration request...\n";
+            send(clientSocket, ack.c_str(), ack.length(), 0);
             
-            if (authManager.registerUser(username, password)) {
-                std::string response = "Registration successful. You can now login.\n";
-                send(clientSocket, response.c_str(), response.length(), 0);
+            bool success = authManager.registerUser(username, password);
+            
+            std::string response;
+            if (success) {
+                response = "Registration successful! You can now login using: /login " + username + ":" + password + "\n";
             } else {
-                std::string response = "Registration failed. Username may already exist.\n";
-                send(clientSocket, response.c_str(), response.length(), 0);
+                response = "Registration failed. Username may already exist.\n";
             }
+            
+            send(clientSocket, response.c_str(), response.length(), 0);
         } else {
             std::string response = "Invalid format. Use /register username:password\n";
             send(clientSocket, response.c_str(), response.length(), 0);
         }
     } else if (cmd == "/login") {
-        // Login
         size_t colonPos = args.find(':');
         if (colonPos != std::string::npos) {
             std::string username = args.substr(0, colonPos);
             std::string password = args.substr(colonPos + 1);
-            
+
+            // Trim whitespace from username and password
+            auto ltrim = [](std::string& s) { s.erase(0, s.find_first_not_of(" \t\r\n")); };
+            auto rtrim = [](std::string& s) { s.erase(s.find_last_not_of(" \t\r\n") + 1); };
+            ltrim(username); rtrim(username);
+            ltrim(password); rtrim(password);
+
             if (authManager.loginUser(username, password, clientSocket)) {
                 std::string response = "Login successful. Welcome, " + username + "!\n";
                 send(clientSocket, response.c_str(), response.length(), 0);
-                
-                // Broadcast user joined message
                 std::string joinMsg = username + " has joined the chat";
                 broadcastMessage("Server", joinMsg);
-                
-                // Register username with group manager
                 groupManager.registerUser(clientSocket, username);
             } else {
                 std::string response = "Login failed. Check your credentials or the user may already be logged in.\n";

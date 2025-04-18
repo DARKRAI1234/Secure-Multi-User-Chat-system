@@ -13,7 +13,9 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 
+#ifdef _MSC_VER
 #pragma comment(lib, "Ws2_32.lib")
+#endif
 
 // ThreadSafeQueue definitions (if needed, though they could stay in the header if templated)
 template<typename T>

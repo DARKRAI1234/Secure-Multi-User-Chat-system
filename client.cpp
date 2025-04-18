@@ -7,8 +7,9 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 
-// Link with Winsock library
+#ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
+#endif
 
 // Constants
 const int DEFAULT_PORT = 8888;
@@ -21,28 +22,32 @@ std::atomic<bool> clientRunning(true);
 // Function to receive messages from server
 void receiveMessages(SOCKET sock) {
     char buffer[BUFFER_SIZE];
+    std::string partialMessage;
     
     while (clientRunning) {
-        // Clear buffer
         memset(buffer, 0, BUFFER_SIZE);
-        
-        // Receive message
         int bytesReceived = recv(sock, buffer, BUFFER_SIZE - 1, 0);
         
         if (bytesReceived <= 0) {
-            // Server disconnected or error
             if (bytesReceived == 0) {
                 std::cout << "Server disconnected" << std::endl;
             } else {
                 std::cerr << "Error receiving message: " << WSAGetLastError() << std::endl;
             }
-            
             clientRunning = false;
             break;
         }
+
+        // Add received data to partial message
+        partialMessage += std::string(buffer, bytesReceived);
         
-        // Print message
-        std::cout << buffer;
+        // Process complete messages
+        size_t pos;
+        while ((pos = partialMessage.find('\n')) != std::string::npos) {
+            std::string message = partialMessage.substr(0, pos);
+            std::cout << message << std::endl;  // Print complete message
+            partialMessage = partialMessage.substr(pos + 1);
+        }
     }
 }
 
@@ -93,18 +98,18 @@ int main(int argc, char* argv[]) {
     std::thread receiveThread(receiveMessages, sock);
     
     // Main loop for sending messages
-    std::string message;
     while (clientRunning) {
-        // Get input
+        std::string message;
         std::getline(std::cin, message);
         
-        // Check for quit command
         if (message == "/quit") {
             clientRunning = false;
             break;
         }
         
-        // Send message
+        // Add newline to message
+        message += '\n';
+        
         if (send(sock, message.c_str(), message.length(), 0) == SOCKET_ERROR) {
             std::cerr << "Error sending message: " << WSAGetLastError() << std::endl;
             clientRunning = false;

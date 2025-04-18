@@ -37,15 +37,16 @@ public:
 
 class AuthenticationManager {
 private:
-    std::unordered_map<std::string, AuthUser> users;
-    std::mutex userMutex;
     std::string dbFilePath;
+    std::mutex userMutex;
+    std::mutex dbMutex;  // Add mutex for database operations
+    std::unordered_map<std::string, AuthUser> users;
     
     // Private methods
     std::string generateSalt(size_t length = 16);
     std::string hashPassword(const std::string& password, const std::string& salt);
     void loadUsers();
-    void saveUsers();
+    bool saveUsers(); // Change return type to bool
     
 public:
     AuthenticationManager(const std::string& dbFile = "users.db");
