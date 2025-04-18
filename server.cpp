@@ -23,7 +23,7 @@ const int BUFFER_SIZE = 4096;
 
 // Global variables
 std::atomic<bool> serverRunning(true);
-SynchronizedGroupManager groupManager;
+SynchronizedGroupManager groupManager("groups.db");  // Initialize with database file
 // Update the DB_PATH constant
 const std::string DB_PATH = "C:\\Users\\123ka\\OneDrive\\Desktop\\OS_mini_project\\build\\users.db";
 AuthenticationManager authManager(DB_PATH);

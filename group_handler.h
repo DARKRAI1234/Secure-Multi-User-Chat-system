@@ -60,9 +60,12 @@ private:
     std::unordered_map<SOCKET, std::string> usernames;            // Use SOCKET type
     std::mutex groupMutex;
     MessageThreadPool threadPool;
+    std::string groupDbPath;
+    void saveGroups();
+    void loadGroups();
     
 public:
-    SynchronizedGroupManager();
+    SynchronizedGroupManager(const std::string& dbPath = "groups.db");
     
     bool createGroup(const std::string& groupName, SOCKET creatorSocket);
     bool joinGroup(const std::string& groupName, SOCKET userSocket);
