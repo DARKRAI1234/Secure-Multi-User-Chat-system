@@ -42,6 +42,25 @@ int main() {
         return 1;
     }
 
+    // Get local IP address
+    char hostName[256];
+    if (gethostname(hostName, sizeof(hostName)) == 0) {
+        struct addrinfo *result = nullptr;
+        struct addrinfo hints = {};
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_STREAM;
+
+        if (getaddrinfo(hostName, nullptr, &hints, &result) == 0) {
+            for (struct addrinfo *ptr = result; ptr != nullptr; ptr = ptr->ai_next) {
+                struct sockaddr_in *addr = (struct sockaddr_in *)ptr->ai_addr;
+                char ipStr[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, &addr->sin_addr, ipStr, sizeof(ipStr));
+                std::cout << "Server IP address: " << ipStr << std::endl;
+            }
+            freeaddrinfo(result);
+        }
+    }
+
     // Create socket
     SOCKET serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket == INVALID_SOCKET) {
@@ -298,7 +317,6 @@ void processCommand(SOCKET clientSocket, const std::string& command) {
             send(clientSocket, response.c_str(), response.length(), 0);
         }
     } else if (cmd == "/join_group") {
-        // Join a group
         AuthUser* user = authManager.getUserBySocket(clientSocket);
         if (!user) {
             std::string response = "You must log in first.\n";
@@ -306,20 +324,17 @@ void processCommand(SOCKET clientSocket, const std::string& command) {
             return;
         }
         
+        std::cout << "User " << user->getUsername() << " attempting to join group '" << args << "'" << std::endl;
+        
         if (groupManager.joinGroup(args, clientSocket)) {
+            std::string joinMsg = user->getUsername() + " has joined the group '" + args + "'";
             std::string response = "You have joined group '" + args + "'.\n";
             send(clientSocket, response.c_str(), response.length(), 0);
             
-            // Notify group members
-            GroupMessage groupMsg{
-                args, 
-                "Server", 
-                user->getUsername() + " has joined the group.",
-                {} // Recipients will be determined by GroupManager
-            };
-            groupManager.sendGroupMessage(args, 0, groupMsg.content); // Use 0 as server socket
+            // Notify other group members
+            groupManager.sendGroupMessage(args, clientSocket, "*** " + joinMsg + " ***");
         } else {
-            std::string response = "Failed to join group. It may not exist or you're already a member.\n";
+            std::string response = "Failed to join group. It may not exist.\n";
             send(clientSocket, response.c_str(), response.length(), 0);
         }
     } else if (cmd == "/leave_group") {
@@ -339,7 +354,6 @@ void processCommand(SOCKET clientSocket, const std::string& command) {
             send(clientSocket, response.c_str(), response.length(), 0);
         }
     } else if (cmd == "/group_msg") {
-        // Send message to a group
         AuthUser* user = authManager.getUserBySocket(clientSocket);
         if (!user) {
             std::string response = "You must log in first.\n";
@@ -352,8 +366,12 @@ void processCommand(SOCKET clientSocket, const std::string& command) {
             std::string groupName = args.substr(0, spacePos);
             std::string message = args.substr(spacePos + 1);
             
+            std::cout << "Attempting to send group message to '" << groupName << "'" << std::endl;
+            std::cout << "From user: " << user->getUsername() << std::endl;
+            
             if (groupManager.sendGroupMessage(groupName, clientSocket, message)) {
-                // Message sent successfully
+                std::string confirmation = "Message sent to group '" + groupName + "'\n";
+                send(clientSocket, confirmation.c_str(), confirmation.length(), 0);
             } else {
                 std::string response = "Failed to send message. You may not be a member of the group or it doesn't exist.\n";
                 send(clientSocket, response.c_str(), response.length(), 0);

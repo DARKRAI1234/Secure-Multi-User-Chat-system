@@ -75,9 +75,17 @@ void MessageThreadPool::workerFunction() {
 }
 
 void MessageThreadPool::processMessage(const GroupMessage& message) {
-    std::string formattedMessage = "[" + message.groupName + "] " + message.senderName + ": " + message.content + "\n";
+    std::string formattedMessage = "[Group: " + message.groupName + "] " + message.senderName + ": " + message.content + "\n";
+    std::cout << "Processing group message: " << formattedMessage;
+    std::cout << "Recipients count: " << message.recipientSockets.size() << std::endl;
+    
     for (SOCKET socketFd : message.recipientSockets) {
-        send(socketFd, formattedMessage.c_str(), formattedMessage.length(), 0);
+        if (socketFd != INVALID_SOCKET) {
+            int result = send(socketFd, formattedMessage.c_str(), formattedMessage.length(), 0);
+            if (result == SOCKET_ERROR) {
+                std::cerr << "Failed to send to socket " << socketFd << ": " << WSAGetLastError() << std::endl;
+            }
+        }
     }
 }
 
@@ -113,14 +121,31 @@ bool SynchronizedGroupManager::leaveGroup(const std::string& groupName, SOCKET u
 
 bool SynchronizedGroupManager::sendGroupMessage(const std::string& groupName, SOCKET senderSocket, const std::string& message) {
     std::lock_guard<std::mutex> lock(groupMutex);
-    if (groups.find(groupName) == groups.end()) return false;
-    const auto& members = groups[groupName];
-    if (std::find(members.begin(), members.end(), senderSocket) == members.end()) return false;
+    
+    std::cout << "Attempting to send message to group: " << groupName << std::endl;
+    
+    auto groupIt = groups.find(groupName);
+    if (groupIt == groups.end()) {
+        std::cout << "Group not found: " << groupName << std::endl;
+        return false;
+    }
+    
+    const auto& members = groupIt->second;
+    if (std::find(members.begin(), members.end(), senderSocket) == members.end() && senderSocket != 0) {
+        std::cout << "Sender not in group" << std::endl;
+        return false;
+    }
+
     std::vector<SOCKET> recipients;
     for (SOCKET member : members) {
-        if (member != senderSocket) recipients.push_back(member);
+        if (member != senderSocket && member != INVALID_SOCKET) {
+            recipients.push_back(member);
+        }
     }
-    std::string senderName = usernames.count(senderSocket) ? usernames[senderSocket] : "Unknown";
+
+    std::string senderName = usernames.count(senderSocket) ? usernames[senderSocket] : "Server";
+    std::cout << "Sending message from " << senderName << " to " << recipients.size() << " recipients" << std::endl;
+    
     GroupMessage groupMsg{groupName, senderName, message, recipients};
     threadPool.enqueueMessage(groupMsg);
     return true;
