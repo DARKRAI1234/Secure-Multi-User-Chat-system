@@ -11,6 +11,7 @@
 #include <chrono>
 #include <ctime>
 #include <iomanip>
+#include <fstream>
 
 // Complete MySQL Connector C++ 9.3 includes
 #include <mysql_driver.h>
@@ -27,8 +28,14 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
-
-#pragma comment(lib, "ws2_32.lib")
+// Database configuration structure
+struct DatabaseConfig {
+    std::string host = "127.0.0.1";
+    int port = 3306;
+    std::string username = "root";
+    std::string password = "";
+    std::string database = "chat_db";
+};
 
 class ChatServer {
 private:
@@ -38,14 +45,86 @@ private:
     std::shared_ptr<ConnectionPool> connectionPool;
     std::unique_ptr<Authentication> auth;
     std::unique_ptr<GroupHandler> groupHandler;
+    DatabaseConfig dbConfig;
 
     static constexpr int PORT = 8080;
     static constexpr int BUFFER_SIZE = 1024;
+
+    // Load database configuration from environment variables or config file
+    DatabaseConfig loadDatabaseConfig() {
+        DatabaseConfig config;
+        
+        // Method 1: Try environment variables first
+        if (const char* env_host = std::getenv("DB_HOST")) {
+            config.host = env_host;
+        }
+        if (const char* env_port = std::getenv("DB_PORT")) {
+            config.port = std::stoi(env_port);
+        }
+        if (const char* env_user = std::getenv("DB_USER")) {
+            config.username = env_user;
+        }
+        if (const char* env_pass = std::getenv("DB_PASSWORD")) {
+            config.password = env_pass;
+        }
+        if (const char* env_db = std::getenv("DB_NAME")) {
+            config.database = env_db;
+        }
+        
+        // Method 2: Try config file if environment variables not found
+        if (config.password.empty()) {
+            loadConfigFromFile(config);
+        }
+        
+        // Method 3: Interactive input if still no password
+        if (config.password.empty()) {
+            std::cout << "Enter MySQL password for user '" << config.username << "': ";
+            std::getline(std::cin, config.password);
+        }
+        
+        return config;
+    }
+    
+    void loadConfigFromFile(DatabaseConfig& config) {
+        std::ifstream configFile("config.ini");
+        if (!configFile.is_open()) {
+            std::cout << "Config file 'config.ini' not found. Using environment variables or interactive input." << std::endl;
+            return;
+        }
+        
+        std::string line;
+        while (std::getline(configFile, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            
+            size_t pos = line.find('=');
+            if (pos != std::string::npos) {
+                std::string key = line.substr(0, pos);
+                std::string value = line.substr(pos + 1);
+                
+                // Trim whitespace
+                key.erase(0, key.find_first_not_of(" \t"));
+                key.erase(key.find_last_not_of(" \t") + 1);
+                value.erase(0, value.find_first_not_of(" \t"));
+                value.erase(value.find_last_not_of(" \t") + 1);
+                
+                if (key == "DB_HOST") config.host = value;
+                else if (key == "DB_PORT") config.port = std::stoi(value);
+                else if (key == "DB_USER") config.username = value;
+                else if (key == "DB_PASSWORD") config.password = value;
+                else if (key == "DB_NAME") config.database = value;
+            }
+        }
+        configFile.close();
+    }
 
 public:
     ChatServer() {
         try {
             std::cout << "=== Initializing Chat Server (Direct Connections) ===" << std::endl;
+
+            // Load database configuration
+            dbConfig = loadDatabaseConfig();
+            std::cout << "Database configuration loaded" << std::endl;
 
             initializeWinsock();
             std::cout << "Winsock initialized" << std::endl;
@@ -61,10 +140,10 @@ public:
             connectionPool = nullptr;
 
             // Initialize modules (they'll use direct connections)
-            auth = std::make_unique<Authentication>(connectionPool);
+            auth = std::make_unique<Authentication>(connectionPool, dbConfig);
             std::cout << "Authentication module initialized" << std::endl;
 
-            groupHandler = std::make_unique<GroupHandler>(connectionPool);
+            groupHandler = std::make_unique<GroupHandler>(connectionPool, dbConfig);
             std::cout << "Group handler initialized" << std::endl;
 
             std::cout << "=== Chat Server Ready (Direct Connections) ===" << std::endl;
@@ -82,15 +161,18 @@ public:
 
     void createDatabaseIfNotExists() {
         try {
-            std::cout << "Creating database with confirmed working connection..." << std::endl;
+            std::cout << "Creating database with configured connection..." << std::endl;
 
             sql::mysql::MySQL_Driver* driver = sql::mysql::get_mysql_driver_instance();
+            
+            // Build connection string using configuration
+            std::string connectionString = "tcp://" + dbConfig.host + ":" + std::to_string(dbConfig.port);
             auto conn = std::unique_ptr<sql::Connection>(
-                driver->connect("tcp://127.0.0.1:3306", "root", "182005kamalN"));
+                driver->connect(connectionString, dbConfig.username, dbConfig.password));
 
             std::unique_ptr<sql::Statement> stmt(conn->createStatement());
-            stmt->execute("CREATE DATABASE IF NOT EXISTS chat_db");
-            stmt->execute("USE chat_db");
+            stmt->execute("CREATE DATABASE IF NOT EXISTS " + dbConfig.database);
+            stmt->execute("USE " + dbConfig.database);
 
             // Complete users table creation
             std::cout << "Creating users table..." << std::endl;
