@@ -225,20 +225,6 @@ FOREIGN KEY (group_id) REFERENCES chat_groups(id) ON DELETE CASCADE
 - Ensure OpenSSL libraries are properly linked
 - Check Visual Studio version compatibility
 
-## Performance Notes
-
-### Recommended Specifications
-- **Development**: Visual Studio 2019+, 8GB RAM, MySQL 8.0
-- **Production**: Windows Server, 16GB+ RAM, Dedicated MySQL server
-- **Client**: Windows 10+, 4GB RAM, Network connectivity
-
-### Scaling Considerations
-- Current implementation supports 50+ concurrent users
-- Database connections scale with user load
-- Memory usage approximately 10MB base + 1MB per connected client
-- Network bandwidth scales with message frequency
-
-## Contributing
 
 ### Development Setup
 1. Fork the repository
