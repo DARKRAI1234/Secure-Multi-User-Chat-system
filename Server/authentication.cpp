@@ -58,7 +58,7 @@ std::unique_ptr<sql::Connection> Authentication::createDirectConnection() {
     try {
         sql::mysql::MySQL_Driver* driver = sql::mysql::get_mysql_driver_instance();
         auto conn = std::unique_ptr<sql::Connection>(
-            driver->connect("tcp://127.0.0.1:3306", "root", "182005kamalN"));
+            driver->connect("tcp://127.0.0.1:3306", "root", "password"));
         conn->setSchema("chat_db");
         return conn;
     }
@@ -238,3 +238,4 @@ bool Authentication::checkUserExists(const std::string& username) {
         return false;
     }
 }
+
