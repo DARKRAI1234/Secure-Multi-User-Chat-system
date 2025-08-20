@@ -123,23 +123,7 @@ Copy these files to your Release folder:
 /clear - Clear screen
 
 
-## Project Structure
 
-Secure-Multi-User-Chat-System/
-├── Server/
-│ ├── server.cpp # Main server implementation
-│ ├── authentication.h/.cpp # User authentication system
-│ ├── group_handler.h/.cpp # Group management system
-│ ├── connectionpool.h/.cpp # Database connection handling
-│ └── Chat_Server.vcxproj # Server project file
-├── Client/
-│ ├── client.cpp # Client application
-│ └── Chat_Client.vcxproj # Client project file
-├── Database/
-│ └── schema.sql # MySQL database schema
-├── .gitignore # Git ignore file
-├── README.md # This file
-└── Secure-Multi-User-Chat-System.sln # Solution file
 
 
 
